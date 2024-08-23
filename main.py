@@ -1,7 +1,8 @@
+import os
+import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox
-import subprocess
-import os
+
 
 class VideoSplitterApp:
     def __init__(self, master):
@@ -11,10 +12,17 @@ class VideoSplitterApp:
 
         self.file_path = tk.StringVar()
         self.duration = tk.StringVar()
+        self.output_dir = tk.StringVar()
 
         tk.Label(master, text="Select Video File:").pack(pady=10)
         tk.Entry(master, textvariable=self.file_path, width=40).pack()
         tk.Button(master, text="Browse", command=self.browse_file).pack(pady=5)
+        
+        tk.Label(master, text="Select Output Directory:").pack(pady=10)
+        tk.Entry(master, textvariable=self.output_dir, width=40).pack()
+        tk.Button(master, text="Browse", command=self.browse_output_dir).pack(pady=5)
+
+
 
         tk.Label(master, text="Split Duration (in seconds):").pack(pady=10)
         tk.Entry(master, textvariable=self.duration, width=10).pack()
@@ -24,6 +32,14 @@ class VideoSplitterApp:
     def browse_file(self):
         filename = filedialog.askopenfilename(filetypes=[("Video files", "*.mp4 *.mov *.mkv")])
         self.file_path.set(filename)
+        
+    def browse_output_dir(self):
+        directory = filedialog.askdirectory()
+        self.output_dir.set(directory)
+        
+    def show_message(self, message):
+        messagebox.showinfo("Message", message)
+
 
     def split_video(self):
         input_file = self.file_path.get()
@@ -39,7 +55,12 @@ class VideoSplitterApp:
             messagebox.showerror("Error", "Invalid duration. Please enter a number.")
             return
 
-        output_dir = os.path.dirname(input_file)
+        output_dir = self.output_dir.get()
+
+        if not os.path.exists(output_dir):
+            messagebox.showerror("Error", "Invalid output directory.")
+            return
+
         base_name = os.path.splitext(os.path.basename(input_file))[0]
 
         # Prepare the ffmpeg command for segmenting the video
@@ -59,6 +80,9 @@ class VideoSplitterApp:
 
         # Run the ffmpeg command
         self.run_ffmpeg_command(command)
+        
+        self.show_message(f"Video split into segments of {segment_duration} seconds and saved in {output_dir}, total {len(os.listdir(output_dir))} segments.")
+        
 
     def run_ffmpeg_command(self, command):
         """Run the ffmpeg command with subprocess."""
