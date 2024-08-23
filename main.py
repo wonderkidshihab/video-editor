@@ -1,106 +1,74 @@
-import os
 import tkinter as tk
-from tkinter import filedialog, ttk
-import cv2
+from tkinter import filedialog, messagebox
 import subprocess
-import concurrent.futures
-import moviepy.editor as mp
+import os
 
-class VideoSplitter:
+class VideoSplitterApp:
     def __init__(self, master):
         self.master = master
         master.title("Video Splitter")
+        master.geometry("400x300")
 
-        # Create widgets
-        self.input_label = ttk.Label(master, text="Input Video:")
-        self.input_label.grid(row=0, column=0, padx=10, pady=10)
+        self.file_path = tk.StringVar()
+        self.duration = tk.StringVar()
 
-        self.input_entry = ttk.Entry(master)
-        self.input_entry.grid(row=0, column=1, padx=10, pady=10)
+        tk.Label(master, text="Select Video File:").pack(pady=10)
+        tk.Entry(master, textvariable=self.file_path, width=40).pack()
+        tk.Button(master, text="Browse", command=self.browse_file).pack(pady=5)
 
-        self.browse_button = ttk.Button(master, text="Browse", command=self.select_input_file)
-        self.browse_button.grid(row=0, column=2, padx=10, pady=10)
+        tk.Label(master, text="Split Duration (in seconds):").pack(pady=10)
+        tk.Entry(master, textvariable=self.duration, width=10).pack()
 
-        self.duration_label = ttk.Label(master, text="Split Duration (seconds):")
-        self.duration_label.grid(row=1, column=0, padx=10, pady=10)
+        tk.Button(master, text="Split Video", command=self.split_video).pack(pady=20)
 
-        self.duration_entry = ttk.Entry(master)
-        self.duration_entry.grid(row=1, column=1, padx=10, pady=10)
-
-        self.output_dir_label = ttk.Label(master, text="Output Directory:")
-        self.output_dir_label.grid(row=2, column=0, padx=10, pady=10)
-
-        self.output_dir_entry = ttk.Entry(master)
-        self.output_dir_entry.grid(row=2, column=1, padx=10, pady=10)
-
-        self.browse_dir_button = ttk.Button(master, text="Browse", command=self.select_output_dir)
-        self.browse_dir_button.grid(row=2, column=2, padx=10, pady=10)
-        
-        self.max_cores_label = ttk.Label(master, text="Max Cores:")
-        self.max_cores_label.grid(row=4, column=0, padx=10, pady=10)
-
-        self.max_cores_entry = ttk.Entry(master)
-        self.max_cores_entry.grid(row=4, column=1, padx=10, pady=10)
-        self.max_cores_entry.insert(0, "4")  # Default to 4 cores
-        
-        
-        
-        self.split_button = ttk.Button(master, text="Split Video", command=self.split_video)
-        self.split_button.grid(row=3, column=0, columnspan=3, padx=10, pady=10)
-        
-
-    def select_input_file(self):
-        self.input_entry.delete(0, tk.END)
-        self.input_entry.insert(0, filedialog.askopenfilename(title="Select Input Video"))
-
-    def select_output_dir(self):
-        self.output_dir_entry.delete(0, tk.END)
-        self.output_dir_entry.insert(0, filedialog.askdirectory(title="Select Output Directory"))
-        
+    def browse_file(self):
+        filename = filedialog.askopenfilename(filetypes=[("Video files", "*.mp4 *.mov *.mkv")])
+        self.file_path.set(filename)
 
     def split_video(self):
-        input_file = self.input_entry.get()
-        split_duration = float(self.duration_entry.get())
-        output_dir = self.output_dir_entry.get()
-        max_cores = int(self.max_cores_entry.get())
+        input_file = self.file_path.get()
+        segment_duration = self.duration.get()
 
-        if not os.path.exists(input_file):
-            print("Error: Input file not found.")
+        if not input_file or not segment_duration:
+            messagebox.showerror("Error", "Please select a file and specify the split duration.")
             return
 
-        if not os.path.exists(output_dir):
-            print("Error: Output directory not found.")
+        try:
+            segment_duration = int(segment_duration)
+        except ValueError:
+            messagebox.showerror("Error", "Invalid duration. Please enter a number.")
             return
 
-        video = mp.VideoFileClip(input_file)
-        total_duration = video.duration
-        video.close()
+        output_dir = os.path.dirname(input_file)
+        base_name = os.path.splitext(os.path.basename(input_file))[0]
 
-        num_splits = int(total_duration // split_duration)
+        # Prepare the ffmpeg command for segmenting the video
+        command = [
+            "ffmpeg",
+            "-i", input_file,
+            "-fflags", "+genpts",  # Generate PTS if missing
+            "-map", "0",
+            "-map", "-0:s",  # Exclude subtitles
+            "-codec", "copy",
+            "-f", "segment",
+            "-segment_format", "mp4",
+            "-segment_time", str(segment_duration),
+            "-reset_timestamps", "1",
+            os.path.join(output_dir, f"{base_name}_%03d.mp4")
+        ]
 
-        # Use a ThreadPoolExecutor to split the video into multiple parts
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_cores) as executor:
-            futures = []
-            for i in range(num_splits):
-                start_time = i * split_duration
-                end_time = start_time + split_duration
-                if end_time > total_duration:
-                    end_time = total_duration
+        # Run the ffmpeg command
+        self.run_ffmpeg_command(command)
 
-                futures.append(executor.submit(self.split_video_part, input_file, output_dir, i, start_time, end_time))
-
-            for future in concurrent.futures.as_completed(futures):
-                future.result()
-
-        print("Video splitting completed.")
-
-    def split_video_part(self, input_file, output_dir, part_index, start_time, end_time):
-        output_file = os.path.join(output_dir, f"output_{part_index+1}.mp4")
-        clip = mp.VideoFileClip(input_file).subclip(start_time, end_time)
-        clip.write_videofile(output_file, codec="libx264", audio_codec="aac")
-        clip.close()
-        print(f"Video clip {part_index+1} saved as: {output_file}")
+    def run_ffmpeg_command(self, command):
+        """Run the ffmpeg command with subprocess."""
+        try:
+            result = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            print(result.stdout.decode())  # Print output for debugging
+        except subprocess.CalledProcessError as e:
+            print(f"An error occurred while processing: {e.stderr.decode()}")
+            messagebox.showerror("Error", f"An error occurred while splitting: {e.stderr.decode()}")
 
 root = tk.Tk()
-app = VideoSplitter(root)
+app = VideoSplitterApp(root)
 root.mainloop()
