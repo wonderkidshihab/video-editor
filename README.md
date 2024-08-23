@@ -1,7 +1,7 @@
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/your-username/video-editor.git
+   git clone https://github.com/wonderkidshihab/video-editor.git
    ```
 2. **Install the required libraries:**
    ```bash
